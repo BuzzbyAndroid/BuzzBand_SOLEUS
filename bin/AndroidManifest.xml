@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.neologue.buzzband_soleus"
+    android:versionCode="6"
+    android:versionName="1.0.3" >
+
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.BLUETOOTH"/> 
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"/> 
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false"/>
+    
+    <uses-sdk
+        android:minSdkVersion="19"
+        android:targetSdkVersion="20" />
+
+    <application
+        android:allowBackup="false"
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name"
+        android:theme="@android:style/Theme.Holo" >
+        <activity
+            android:name=".BuzzBandMain"
+            android:label="@string/app_name" >
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <service android:name=".notifserver"
+            >
+        </service>
+        <receiver android:name=".NotifReceiver" android:enabled="true">
+                <intent-filter>
+                    <action android:name="com.neologue.buzzby.Notification">
+                    </action>
+                </intent-filter>
+        </receiver>
+        <receiver android:name=".StartAtBootService" android:enabled="true">
+                <intent-filter>
+                    <action android:name="android.intent.action.BOOT_COMPLETED">
+                    </action>
+                    <category android:name="android.intent.category.HOME">
+                    </category>
+                </intent-filter>
+        </receiver>
+        </application>
+
+</manifest>

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    
+    <string name="app_name">BuzzBand_SOLEUS</string>
+    <string name="app_title">Buzzband link from Buzzby to SOLEUS Band</string>
+    <string name="app_version">Version</string>
+    <string name="sd_gone">No SD card for log file</string>
+    
+    <string name="pd_letitle">Scanning for Bluetooth 4.x devices</string>
+    <string name="opt_bt4spinhead">Buzz this band</string>
+    <string name="pd_lemess1">Found (</string>
+    <string name="pd_lemess2">). Please wait...</string>
+    
+    <string name="bt_notenabled">Bluetooth in Settings needs to be turned on before a test can be done</string>
+    <string name="bt_nobt">Could not get Bluetooth information from this phone</string>
+    <string name="bt_noble">Bluetooth LE (Low Energy) is not supported on this phone</string>
+    <string name="bt_none">(NONE)</string>
+    <string name="bt_startscan">Scan for Bluetooth 4.x devices</string>
+    <string name="bt_test">Test Buzz</string>
+    
+    <string name="cols_ok">Done</string>
+
+    <string name="test_app">Buzzby</string>
+    <string name="test_ticker">Sample ticker text</string>
+    <string name="test_ext">Test</string>
+    
+    <string name="check_head">Don\'t buzz for any of the following</string>
+    <string name="check_nosnd">No sound</string>
+    <string name="check_defaultsnd">Default sound</string>
+    <string name="check_builtinsnd">Built-in sound</string>
+    <string name="check_notifsnd">Notification sound</string>
+    <string name="check_filesnd">File sound</string>
+        
+</resources>
