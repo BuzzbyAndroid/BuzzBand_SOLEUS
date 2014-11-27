@@ -9,6 +9,7 @@ import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -104,6 +105,21 @@ public class notifserver extends Service {
     	//Log.d("BuzzBand","Exit getprefs");
 	}
 	
+	public static final String [] okascii = {
+		"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", " ",
+		"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
+		"A", "B", "C", "D", "E", "F", "G", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
+		"<", ">", ",", ".", "/", "?", ":", ";", "\"", "'", "~", "@", "$", "%", "^", "&", "*", "(", ")", "[", "]", "{", "}", "-", "+", "_", "=", "|" 
+	};
+	
+	public static HashMap<String, Integer> charmap = new HashMap<String, Integer>(okascii.length*3);
+	
+	public static void init_hashmap() {
+		for (int i=0; i<okascii.length; i++) {
+			charmap.put(okascii[i], i);
+		}
+	}
+	
 	class GetDevDetails extends Thread {
 		
 		public void run() {
@@ -154,17 +170,21 @@ public class notifserver extends Service {
     		ArrayList blocks = new ArrayList();
     		String sall = ticker; //app+":"+ext;
 	    	//Log.d("BuzzBand","message len="+Integer.toString(sall.length())+" text="+sall);
-	    	byte[] b1 = sall.getBytes(StandardCharsets.US_ASCII); // soleus band seems to support just ASCII
-	    	// remove repeats of 0x3f codes 
-	    	byte [] bs = new byte[b1.length];
-	    	int bsl = 1;
-	    	bs[0] = b1[0];
-	    	for (int i=1; i<b1.length; i++) {
-	    		if (b1[i-1] == 0x3f && b1[i] == 0x3f) {
-	    			continue;
-	    		}
-	    		bs[bsl] = b1[i];
-	    		bsl += 1;
+    		// first remove non-asci printable characters as the band doesn't like them
+    		String s0 = "";
+    		int i = 0;
+    		int j = 0;
+    		for (i=0; i<sall.length(); i++) {
+    			if (charmap.containsKey(sall.substring(i, i+1))) {
+    				s0 += sall.charAt(i);
+    				j += 1;
+    			}
+    		}
+	    	byte[] bs = s0.getBytes();
+	    	int bsl = bs.length;
+	    	if (bsl == 0) {
+	    		inbuzz = false;
+	    		return;
 	    	}
     		if (bsl > 17) {
     			// long message needs to be broken into blocks, first block has special format
@@ -177,7 +197,7 @@ public class notifserver extends Service {
     			byte b[] = new byte[20];
         		b[0] = (byte) 0xa5;
         		b[1] = (byte)fulllen;
-        		int i, j=2;
+        		j=2;
         		for (i=0; i<18; i++) {
         			b[j] = bs[i];
         			j++;
@@ -242,7 +262,7 @@ public class notifserver extends Service {
         		byte [] b = new byte[20];
         		b[0] = (byte) 0xb5;
         		b[1] = (byte)bsl;
-        		int i, j=2;
+        		j=2;
         		for (i=0; i<bsl; i++) {
         			b[j] = bs[i];
         			j++;
@@ -254,7 +274,7 @@ public class notifserver extends Service {
         		b[19] = (byte) 0xb4;
         		blocks.add(b.clone());
     		}
-    		for (int i=0; i<blocks.size(); i++) {
+    		for (i=0; i<blocks.size(); i++) {
             	notifserver.bt4characteristicforwrite[idx].setValue((byte [])blocks.get(i));
             	notifserver.bt4characteristicforwrite[idx].setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);
             	boolean res2 = notifserver.bt4gatt[idx].writeCharacteristic(notifserver.bt4characteristicforwrite[idx]);
@@ -374,6 +394,7 @@ public class notifserver extends Service {
     	try {
     		srvhandle = this;
             Log.homefolder = getString(R.string.app_name);
+            init_hashmap();
             //Log.d("BuzzBand", "Service oncreate top entry");
     		if (notifserver.settings == null) {
         		notifserver.settings = getSharedPreferences(notifserver.PREFS_NAME,0);
