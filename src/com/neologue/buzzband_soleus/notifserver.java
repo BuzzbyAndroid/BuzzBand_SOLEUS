@@ -14,6 +14,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+import android.annotation.TargetApi;
+import android.app.KeyguardManager;
 import android.app.ProgressDialog;
 import android.app.Service;
 import android.bluetooth.BluetoothAdapter;
@@ -26,13 +28,22 @@ import android.bluetooth.BluetoothProfile;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Environment;
 import android.os.IBinder;
+import android.os.PowerManager;
+import android.view.Display;
 import android.view.View;
+import android.view.Window;
+import android.view.WindowManager;
 import android.widget.ArrayAdapter;
 import android.widget.Spinner;
 
 
+/*
+ * The service is used to hold on to needed global information when the
+ * BuzzBand main activity is gone.
+ */
 public class notifserver extends Service {
 
 	public static File sdroot = Environment.getExternalStorageDirectory();
@@ -46,7 +57,7 @@ public class notifserver extends Service {
 	public static SharedPreferences.Editor editsettings;
 	public static View mainview = null;
 	public static final String PREFS_NAME = "BuzzBand-SOLEUS";
-
+	
 	public static ProgressDialog pd = null;
 	public static BluetoothManager btm = null;
 	public static String prefbraceletaddress = "";
@@ -84,6 +95,12 @@ public class notifserver extends Service {
 	public static boolean allow_notifsnd = true;
 	public static boolean allow_filesnd = true;
 
+    public static PowerManager pm = null;
+    public static KeyguardManager kgm = null;
+    public static WindowManager wm = null;
+    public static Display display = null;
+    public static Window window = null;
+    
 	public static void getprefs() {
     	//Log.d("BuzzBand","Enter getprefs");
 		if (notifserver.settings == null) {
@@ -105,6 +122,7 @@ public class notifserver extends Service {
     	//Log.d("BuzzBand","Exit getprefs");
 	}
 	
+	// The only ASCII characters the SOLEUS band is willing to display.
 	public static final String [] okascii = {
 		"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", " ",
 		"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
@@ -112,6 +130,7 @@ public class notifserver extends Service {
 		"<", ">", ",", ".", "/", "?", ":", ";", "\"", "'", "~", "@", "$", "%", "^", "&", "*", "(", ")", "[", "]", "{", "}", "-", "+", "_", "=", "|" 
 	};
 	
+	// quick way of checking if a character in the message is OK to send to the SOLEUS band
 	public static HashMap<String, Integer> charmap = new HashMap<String, Integer>(okascii.length*3);
 	
 	public static void init_hashmap() {
@@ -120,6 +139,11 @@ public class notifserver extends Service {
 		}
 	}
 	
+	/*
+	 * If the app starts in the background (eg. after a poweron), it
+	 * needs to redo the LE scan and find the SOLEUS device and it's
+	 * services and characteristics. This thread looks after that case.
+	 */
 	class GetDevDetails extends Thread {
 		
 		public void run() {
@@ -134,6 +158,9 @@ public class notifserver extends Service {
 		}
 	}
 
+	/*
+	 * Background thread for sending the text message to the SOLEUS band
+	 */
 	class SendData extends Thread {
 		String app;
 		String ext;
@@ -452,5 +479,214 @@ public class notifserver extends Service {
 	}
 
 	
+	/*
+	 * Some bands (not the SOLEUS) can request operations which Buzzby can perform.
+	 * The following routines provide calls to Buzzby to carry out operations such as
+	 * dimissing notifications, telling Buzzby the user has looked at (touched) a
+	 * notification, wants the notifiying app started, wants a browser started, etc.
+	 * 
+	 * In many case the notification is selected by the rowid of the notification
+	 * in the Buzzby database. The rowid is given to this app when Buzzby passes the notification on.
+	 */
+	public static void send_buzzby_dismiss(int notificationid, String pkg, String tag, String key) {
+    	////Log.d("BuzzBand","band requests dismiss of a notification");
+    	Intent intent = new Intent();
+    	intent.putExtra("com.neologue.buzzby.NOTIF_ID", notificationid); //used for Android below 5.0
+    	intent.putExtra("com.neologue.buzzby.NOTIF_TAG", tag); //used for Android below 5.0
+    	intent.putExtra("com.neologue.buzzby.NOTIF_PKG", pkg); //used for Android below 5.0
+    	intent.putExtra("com.neologue.buzzby.NOTIF_KEY", key); //used in Android 5.0 and above
+    	intent.setAction("com.neologue.buzzby.DISMISS");
+    	srvhandle.startService(intent);
+	}
+
+	public static void send_buzzby_lauch(long rowid, int which) {
+    	////Log.d("BuzzBand","band requests launch of notifying app");
+    	Intent intentl = new Intent();
+    	intentl.putExtra("com.neologue.buzzby.NOTIF_ROWID", rowid); //rowid is notification rowid in buzzby database
+    	intentl.putExtra("com.neologue.buzzby.NOTIF_INTENTNUM", which); //which = 0 for general launch of notifiying app
+    																	//which > 0 for action number in notification (from array of ActionEntry objects)
+    	intentl.setAction("com.neologue.buzzby.LAUNCH");
+    	intentl.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+    	srvhandle.startService(intentl);
+    }
+
+	public static void send_buzzby_touch(long rowid, int which) {
+    	////Log.d("BuzzBand","user has touched a notification that was previously untouched");
+    	Intent intentt = new Intent();
+    	intentt.putExtra("com.neologue.buzzby.NOTIF_ROWID", rowid);
+    	intentt.setAction("com.neologue.buzzby.TOUCH");
+    	intentt.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+    	srvhandle.startService(intentt);
+	}
+	
+	public static void send_buzzby_link1(String link1) {
+    	////Log.d("BuzzBand","user wants to jump to website defined by link1");
+		boolean screenon = false;
+    	int currentapiVersion = android.os.Build.VERSION.SDK_INT;
+    	if (currentapiVersion >= android.os.Build.VERSION_CODES.LOLLIPOP){
+    		screenon = display.getState() == Display.STATE_ON;
+    	} else {
+    		screenon = pm.isScreenOn();
+    	}
+		if (!screenon) {
+            ////Log.d("BuzzBand", "screen was not on");
+	        waitforscreenon x = new waitforscreenon(0, link1);
+	        x.start();
+        } else {
+        	Intent i1 = new Intent(Intent.ACTION_VIEW);
+        	i1.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            i1.setData(Uri.parse(link1));
+            srvhandle.startActivity(i1);
+        }
+	}
+	
+	public static void send_buzzby_link2(String link2) {
+    	////Log.d("BuzzBand","user wants to jump to website defined by link2");
+		boolean screenon = false;
+    	int currentapiVersion = android.os.Build.VERSION.SDK_INT;
+    	if (currentapiVersion >= android.os.Build.VERSION_CODES.LOLLIPOP){
+    		screenon = display.getState() == Display.STATE_ON;
+    	} else {
+    		screenon = pm.isScreenOn();
+    	}
+		if (!screenon) {
+            ////Log.d("BuzzBand", "screen was not on");
+	        waitforscreenon x = new waitforscreenon(0, link2);
+	        x.start();
+        } else {
+        	Intent i2 = new Intent(Intent.ACTION_VIEW);
+        	i2.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            i2.setData(Uri.parse(link2));
+            srvhandle.startActivity(i2);
+        }
+	}
+	
+    // The following are support routines for the functions in the previous section
+
+    @TargetApi(21)
+	public static class postunlock extends Thread {
+		int ptr;
+		String link;
+		
+		public postunlock(int ptr, String link) {
+			this.ptr = ptr;
+			this.link = link;
+		}
+
+
+		public void run() {
+			try {
+	            ////Log.d("Buzzband", "enter postunlock");
+	        	int currentapiVersion = android.os.Build.VERSION.SDK_INT;
+	        	boolean screenon = false;
+				for (int i=0; i<50; i++) {
+					if( !kgm.inKeyguardRestrictedInputMode() ) {
+			            ////Log.d("Buzzband", "postunlock keyguard is off now");
+    		        	if (currentapiVersion >= android.os.Build.VERSION_CODES.LOLLIPOP){
+    		        		screenon = display.getState() == Display.STATE_ON;
+    		        	} else {
+    		        		screenon = pm.isScreenOn();
+    		        	}
+						if (screenon) {
+				            ////Log.d("Buzzband", "postunlock screen is on, do operation");
+				            if (link != null && link.length() > 1) {
+					            ////Log.d("BuzzBand", "postunlock fire up browser");
+				            	Intent i1 = new Intent(Intent.ACTION_VIEW);
+				            	i1.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+				                i1.setData(Uri.parse(link));
+				                srvhandle.startActivity(i1);
+				            }
+        	    			break;
+						}
+					}
+		            ////Log.d("Buzzband", "postunlock need to wait");
+					sleep(200);
+				}
+	            ////Log.d("Buzzband", "exit postunlock");
+			} catch (Exception e) {
+	            ////Log.d("Buzzband", "exception in postunlock="+e.getMessage);
+			}
+		}
+	}
+	
+	public static class postscreenon implements Runnable {
+		int ptr;
+		String link;
+		
+		public postscreenon(int ptr, String link) {
+			this.ptr = ptr;
+			this.link = link;
+		}
+		
+		@Override
+		public void run() {
+			try {
+                ////Log.d("BuzzBand", "Enter postscreenon");
+				if(kgm.inKeyguardRestrictedInputMode() ) {
+                    ////Log.d("BuzzBand", "postscreenon lock detected");
+                    if (buzzbandhandle != null) {
+                        ////Log.d("BuzzBand", "postscreenon get window");
+                        Window win = buzzbandhandle.getWindow();
+        	        	int currentapiVersion = android.os.Build.VERSION.SDK_INT;
+       		        	if (currentapiVersion >= android.os.Build.VERSION_CODES.LOLLIPOP){
+       	                    win.addFlags(WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD);
+       		        	} else {
+       	                    win.addFlags(WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD);
+       	                    win.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
+       		        	}
+                    }
+				}
+		        // pass back to a thread to wait
+		        postunlock x = new postunlock(ptr, link);
+		        x.start();
+                ////Log.d("BuzzBand", "Exit postscreenon");
+	    	} catch (Exception e) {
+	            ////Log.d("Buzzband", "exception in postscreenon="+e.getMessage);
+	    	}
+		}
+	}
+
+
+    @TargetApi(21)
+	public static class waitforscreenon extends Thread {
+		int ptr;
+		String link;
+		
+		public waitforscreenon(int ptr, String link) {
+			this.ptr = ptr;
+			this.link = link;
+		}
+		
+		public void run() {
+			try {
+	            ////Log.d("BuzzBand", "enter waitforscreenon");
+	        	int currentapiVersion = android.os.Build.VERSION.SDK_INT;
+	        	boolean screenon = false;
+	            for (;;) {
+		        	if (currentapiVersion >= android.os.Build.VERSION_CODES.LOLLIPOP){
+		        		screenon = display.getState() == Display.STATE_ON;
+		        	} else {
+		        		screenon = pm.isScreenOn();
+		        	}
+		        	if (screenon) {
+		        		break;
+		        	}
+		            ////Log.d("BuzzBand", "waitforscreenon screen not on yet");
+					sleep(500);
+	            }
+	            ////Log.d("BuzzBand", "waitforscreenon screen is on");
+	            // pass to uithread oh boy
+	            postscreenon x = new postscreenon(ptr, link);
+	            if (buzzbandhandle != null) {
+		            ////Log.d("BuzzBand", "waitforscreenon has ui available");
+		            buzzbandhandle.runOnUiThread(x);
+	            }
+	            ////Log.d("BuzzBand", "exit waitforscreenon");
+			} catch (Exception e) {
+	            ////Log.d("Buzzband", "exception in waitforscreenon="+e.getMessage);
+			}
+		}
+	}
+
 
 }

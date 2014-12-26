@@ -4,9 +4,9 @@ import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.UUID;
-
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.KeyguardManager;
 import android.app.ProgressDialog;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -21,9 +21,13 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
+import android.view.Display;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.view.Window;
+import android.view.WindowManager;
 import android.widget.AdapterView;
 import android.widget.AdapterView.OnItemSelectedListener;
 import android.widget.ArrayAdapter;
@@ -36,8 +40,19 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import android.app.KeyguardManager;
+import android.os.PowerManager;
+import android.view.Display;
+import android.view.Window;
+import android.view.WindowManager;
+
 public class BuzzBandMain extends Activity {
 
+	/*
+	 * Initial (pre-scan) set up of the spinner displaying the
+	 * Bluetooth LE devices found in the scan. The zeroeth element
+	 * is set to (NONE) at initialisation.
+	 */
 	public static void init_adapter() {
     	//Log.d("BuzzBand", "Enter initadapter");
 		notifserver.bt4adapter = new ArrayAdapter <CharSequence> (notifserver.buzzbandhandle, android.R.layout.simple_spinner_item );
@@ -64,6 +79,9 @@ public class BuzzBandMain extends Activity {
     	//Log.d("BuzzBand", "Eexit initadapter");
 	}
 	
+	/*
+	 * Set up the checkboxes on the app's panel
+	 */
 	public static void init_checks() {
     	//Log.d("BuzzBand", "Enter initchecks");
 		CheckBox cno = (CheckBox)notifserver.mainview.findViewById(R.id.cb_nosnd);
@@ -139,6 +157,14 @@ public class BuzzBandMain extends Activity {
         //Log.d("BuzzBand", " enter buzzbandmain oncreate");
         setContentView(R.layout.activity_buzz_band_main);
         
+        // some items used to help start up apps if the user requests an action
+        notifserver.window = getWindow();
+        notifserver.pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        notifserver.kgm = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
+        notifserver.wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+        notifserver.display = notifserver.wm.getDefaultDisplay();
+
+        // set up the app's panel
         notifserver.mainview = (View)findViewById(R.id.mainview);
         String v;
         try {
@@ -162,6 +188,7 @@ public class BuzzBandMain extends Activity {
 				notifserver.lebuzz(getString(R.string.test_app), getString(R.string.test_ticker), getString(R.string.test_ext));
 			}});
 
+        // start the service if it's not already running
         if (notifserver.srvhandle == null) {
 	        //Log.d("BuzzBand", "srvhandle was null");
            	notifserver.bt4names[0] = getString(R.string.bt_none);
@@ -187,6 +214,9 @@ public class BuzzBandMain extends Activity {
     }
     
 
+    /*
+     * Called when the right band is found to make it the selected item.
+     */
 	public class postsetspin implements Runnable {
 		int pos;
 		public postsetspin(int ppos) {
@@ -207,6 +237,11 @@ public class BuzzBandMain extends Activity {
     private static boolean scanningle = false;
     private static Timer scantimer = null;
     
+    /*
+     * Called for each device found during a scan so it can be added to the list.
+     * At the conclusion of the scan, code will try to get the characteristics
+     * for each device in the list
+     */
     private static BluetoothAdapter.LeScanCallback lecallback = new BluetoothAdapter.LeScanCallback() {
 		@Override
 		public void onLeScan(BluetoothDevice device, int rssi, byte[] scanRecord) {
@@ -261,6 +296,12 @@ public class BuzzBandMain extends Activity {
 			}
 		}};
     
+		/*
+		 * When the list is examined after the LE scan, an attempt is made to connect to
+		 * each device so that services offered by the device can be obtained.
+		 * This callback handles the result of the connection attempt. The code may
+		 * retry a few times if the initial connection attempts fail.
+		 */
 		public static BluetoothGattCallback maincallback = new BluetoothGattCallback() {
 			@Override
 			public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
@@ -304,6 +345,16 @@ public class BuzzBandMain extends Activity {
             	}
             	//Log.d("BuzzBand","Exit Gatt onConnectionStateChange");
 			}
+			
+			
+			/*
+			 * If a connect succeeded the result of request for services will be
+			 * handles here. In the SOLEUS case, we look for a specific characteristic
+			 * which can be used to write a short text message to the band. Since all
+			 * that is required for the operation of writing the message is the characteristic,
+			 * we save it in an array for later use and mark the array index as the preferred
+			 * device's index.
+			 */
 			@Override
 			public void onServicesDiscovered(BluetoothGatt gatt, int status) {
 				if (status == BluetoothGatt.GATT_SUCCESS) {
@@ -391,6 +442,13 @@ public class BuzzBandMain extends Activity {
 			}
 		};
 		
+	/*
+	 * Called when we want to do a Bluetooth LE scan to find a compatible device.
+	 * If it succeeds, by the end of the complete operation (through a series
+	 * of callbacks), we will have a spinner with 1 or more device names in it
+	 * and the selected item in the spinner will be the band which has the correct
+	 * characteristics for us to be able to write messages to it.
+	 */
     @SuppressWarnings("deprecation")
 	public static void findbt4devs(View rootview) {
         //Log.d("BuzzBand", "Enter findbt4devs");

@@ -8,6 +8,12 @@ import android.os.Environment;
 import android.os.SystemClock;
 import android.widget.Toast;
 
+/*
+ * A replacement for the Java Log class.
+ * This one produce a log file in the public folder which is the app name
+ * The log file swaps to a new file after the file reaches 0.5MB to avoid
+ * growing to excess.
+ */
 public class Log {
 		public static File dfile = null;
 		public static FileOutputStream dstream;
